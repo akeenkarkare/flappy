@@ -1,42 +1,78 @@
 import type { LiveFlight } from '@/types/flight';
 
-const OPENSKY_BASE = 'https://opensky-network.org/api';
-
 type BBox = { minLat: number; maxLat: number; minLon: number; maxLon: number };
 
-export async function fetchFlightsInBBox(bbox: BBox): Promise<LiveFlight[]> {
-  const url = new URL(`${OPENSKY_BASE}/states/all`);
-  url.searchParams.set('lamin', String(bbox.minLat));
-  url.searchParams.set('lamax', String(bbox.maxLat));
-  url.searchParams.set('lomin', String(bbox.minLon));
-  url.searchParams.set('lomax', String(bbox.maxLon));
+type AdsbAircraft = {
+  hex: string;
+  flight?: string;
+  r?: string;
+  t?: string;
+  lat?: number;
+  lon?: number;
+  alt_baro?: number | 'ground';
+  gs?: number;
+  track?: number;
+  seen?: number;
+};
 
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`OpenSky ${res.status}`);
-  const data = (await res.json()) as { states: unknown[][] | null };
+type AdsbResponse = {
+  ac?: AdsbAircraft[];
+  now?: number;
+  queriedRadiusNm?: number;
+  capped?: boolean;
+};
 
-  if (!data.states) return [];
+export type FlightsResult = {
+  flights: LiveFlight[];
+  queriedRadiusNm: number;
+  capped: boolean;
+};
 
-  return data.states
-    .map((s) => parseState(s))
-    .filter((f): f is LiveFlight => f !== null);
-}
+export async function fetchFlightsInBBox(
+  bbox: BBox,
+  signal?: AbortSignal,
+): Promise<FlightsResult> {
+  const params = new URLSearchParams({
+    lamin: String(bbox.minLat),
+    lamax: String(bbox.maxLat),
+    lomin: String(bbox.minLon),
+    lomax: String(bbox.maxLon),
+  });
 
-function parseState(s: unknown[]): LiveFlight | null {
-  const lat = s[6] as number | null;
-  const lon = s[5] as number | null;
-  if (lat == null || lon == null) return null;
+  const res = await fetch(`/api/opensky?${params.toString()}`, { signal });
+  if (!res.ok) throw new Error(`adsb proxy ${res.status}`);
+  const data = (await res.json()) as AdsbResponse;
+  const nowMs = (data.now ?? Date.now() / 1000) * 1000;
 
   return {
-    icao24: s[0] as string,
-    callsign: ((s[1] as string) ?? '').trim() || undefined,
-    lat,
-    lon,
-    altitudeMeters: (s[7] as number) ?? 0,
-    groundSpeedMps: (s[9] as number) ?? 0,
-    trackDeg: (s[10] as number) ?? 0,
-    onGround: (s[8] as boolean) ?? false,
-    lastUpdateUtc: new Date(((s[4] as number) ?? 0) * 1000).toISOString(),
+    flights: (data.ac ?? [])
+      .map((a) => parseAircraft(a, nowMs))
+      .filter((f): f is LiveFlight => f !== null),
+    queriedRadiusNm: data.queriedRadiusNm ?? 0,
+    capped: data.capped ?? false,
+  };
+}
+
+function parseAircraft(a: AdsbAircraft, nowMs: number): LiveFlight | null {
+  if (a.lat == null || a.lon == null) return null;
+
+  const altMeters =
+    a.alt_baro === 'ground' || a.alt_baro == null ? 0 : a.alt_baro * 0.3048;
+  const gsMps = (a.gs ?? 0) * 0.5144;
+  const seenSec = a.seen ?? 0;
+
+  return {
+    icao24: a.hex,
+    callsign: a.flight?.trim() || undefined,
+    aircraftReg: a.r,
+    aircraftType: a.t,
+    lat: a.lat,
+    lon: a.lon,
+    altitudeMeters: altMeters,
+    groundSpeedMps: gsMps,
+    trackDeg: a.track ?? 0,
+    onGround: a.alt_baro === 'ground',
+    lastUpdateUtc: new Date(nowMs - seenSec * 1000).toISOString(),
     depIata: '',
     arrIata: '',
     depTimeUtc: '',
