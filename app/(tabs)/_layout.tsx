@@ -19,11 +19,7 @@ export default function TabLayout() {
         options={{
           title: 'Map',
           tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{ ios: 'airplane', android: 'flight', web: 'flight' }}
-              tintColor={color}
-              size={28}
-            />
+            <SymbolView name="airplane" tintColor={color} size={28} />
           ),
         }}
       />
@@ -32,11 +28,7 @@ export default function TabLayout() {
         options={{
           title: 'Logbook',
           tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{ ios: 'book.closed', android: 'menu_book', web: 'menu_book' }}
-              tintColor={color}
-              size={28}
-            />
+            <SymbolView name="book.closed" tintColor={color} size={28} />
           ),
         }}
       />
@@ -45,11 +37,7 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{ ios: 'person.circle', android: 'person', web: 'person' }}
-              tintColor={color}
-              size={28}
-            />
+            <SymbolView name="person.circle" tintColor={color} size={28} />
           ),
         }}
       />
